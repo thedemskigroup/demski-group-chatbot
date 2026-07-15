@@ -32,6 +32,24 @@ cpSync(join(root, 'knowledge'), join(COMPUTE_DIR, 'knowledge'), { recursive: tru
 console.log('[prepare-amplify] Copying node_modules -> compute/default/node_modules');
 cpSync(join(root, 'node_modules'), join(COMPUTE_DIR, 'node_modules'), { recursive: true });
 
+// Amplify Hosting's app-level "Environment variables" reach this build
+// step's process.env but were confirmed NOT to reach the compute
+// resource's process.env at request time (production returned
+// {"error":"API key not configured"} despite the console value being set).
+// Snapshot them here, at build time, into the compute bundle so server.mjs
+// can load them into its own process.env before serving requests — see
+// server.mjs's loadBuildTimeSecrets(). Lives only inside compute/default/,
+// which is never served by the Static primitive, and is never committed
+// (this whole directory is gitignored, regenerated fresh on every build).
+console.log('[prepare-amplify] Writing build-time secrets snapshot -> compute/default/.runtime-secrets.json');
+writeFileSync(
+  join(COMPUTE_DIR, '.runtime-secrets.json'),
+  JSON.stringify({
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+    SENDGRID_API_KEY: process.env.SENDGRID_API_KEY || '',
+  })
+);
+
 const manifest = {
   version: 1,
   framework: { name: 'demski-chatbot-server', version: '1.0.0' },

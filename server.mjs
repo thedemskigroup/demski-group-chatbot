@@ -6,8 +6,36 @@
 // widget.js, etc.) are handled separately by Amplify's Static primitive —
 // see deploy-manifest.json — this process only ever serves /api/*.
 import { createServer } from 'node:http';
+import { readFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import chatHandler from './api/chat.js';
 import sendLeadHandler from './api/send-lead.js';
+
+// Amplify Hosting's app-level "Environment variables" are confirmed to
+// reach the BUILD phase (npm run build), but empirically do NOT show up in
+// this compute resource's process.env at request time (production returned
+// {"error":"API key not configured"} despite OPENAI_API_KEY being set in
+// the console, and the deploy-manifest.json spec has no per-compute
+// "environment" field to request it either). prepare-amplify.mjs snapshots
+// the build-time values into .runtime-secrets.json next to this file; load
+// them here, before the server starts accepting requests, as a fallback so
+// api/chat.js and api/send-lead.js's own process.env.* reads (evaluated
+// lazily per-request, not at import time) keep working unmodified.
+function loadBuildTimeSecrets() {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const secretsPath = join(__dirname, '.runtime-secrets.json');
+  if (!existsSync(secretsPath)) return;
+  try {
+    const secrets = JSON.parse(readFileSync(secretsPath, 'utf8'));
+    for (const [key, value] of Object.entries(secrets)) {
+      if (value && !process.env[key]) process.env[key] = value;
+    }
+  } catch (e) {
+    console.error('[server] Failed to load .runtime-secrets.json:', e.message);
+  }
+}
+loadBuildTimeSecrets();
 
 const PORT = process.env.PORT || 3000;
 
