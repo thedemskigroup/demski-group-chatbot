@@ -1,5 +1,5 @@
 {
-  "name": "demski-chatbot-lambda-send-lead",
+  "name": "demski-chatbot-lambda-api",
   "private": true,
   "type": "module",
   "dependencies": {
