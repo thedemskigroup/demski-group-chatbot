@@ -612,6 +612,18 @@
     var inputBar = document.getElementById('cb-input-bar');
     var schedBar = document.getElementById('cb-schedule-wrap');
 
+    /* The persistent "Schedule a Free Consultation" bar is a plain anchor
+     * (native target="_blank" navigation) rather than a JS-driven open, so
+     * clicking it was previously invisible to tracking too. No
+     * preventDefault here — the push runs synchronously in the click
+     * handler, which always completes before the browser's default anchor
+     * navigation begins, so the event is guaranteed to be queued before
+     * the calendar opens without touching the native click behavior at
+     * all (same trackScheduleClick used by the "Book a Google Meet"
+     * button below — one implementation for both entry points). */
+    var schedLink = document.getElementById('cb-schedule-bar');
+    if (schedLink) schedLink.addEventListener('click', function () { trackScheduleClick(); });
+
     /* AI conversation history — used whenever the user types free text
      * instead of clicking a scripted button. */
     var chatHistory = [];
@@ -2396,7 +2408,7 @@
       function renderCtaButtons() {
         var div = document.createElement('div'); div.className = 'cb-cta-btns'; div.id = 'cb-cta';
         var book = document.createElement('button'); book.className = 'cb-cta-primary'; book.textContent = 'Book a Google Meet';
-        book.onclick = function () { handleCTA('Book a Google Meet'); window.open(CALENDLY_URL, '_blank'); };
+        book.onclick = function () { handleCTA('Book a Google Meet'); trackScheduleClick(); window.open(CALENDLY_URL, '_blank'); };
         div.appendChild(book);
         /* "Send me info by email" only makes sense when an email is on
          * file (the user may have refused to give one, see the step-6
@@ -2414,6 +2426,40 @@
         ? buildSoftClosingSummary()
         : "Awesome! Based on what you've shared, the best next step is a quick call or Google Meet to go over your project!";
       botReply(ctaIntro, renderCtaButtons, 1200);
+    }
+
+    /* Google Calendar CTA tracking (Andrew's feedback item 2): previously
+     * the chatbot opened Google Calendar directly with no visibility into
+     * how many visitors actually clicked through. Pushes a dedicated
+     * chatbot_schedule_click event before navigating. Both CALENDLY_URL
+     * entry points (the final "Book a Google Meet" button and the
+     * persistent schedule bar) call this one function — a single
+     * implementation, not two.
+     *
+     * Deliberately does NOT wait 150-250ms before navigating, despite that
+     * being the originally requested pattern: that delay exists to protect
+     * an in-flight analytics beacon from a same-tab page unload, which
+     * doesn't apply here since both entry points open the calendar in a
+     * NEW tab (window.open / target="_blank") — this tab is never
+     * unloaded, so the push completes normally with zero race condition.
+     * Browsers (Safari in particular, including all iOS browsers, which
+     * are Safari under the hood) only treat window.open() as a genuine
+     * user-initiated popup when it's called synchronously inside the click
+     * handler — wrapping it in a setTimeout, even a couple hundred ms, is a
+     * well-documented way to have it silently blocked. Pushing first and
+     * opening in the same synchronous handler satisfies the actual
+     * requirement (tracked before navigation) without risking the button
+     * silently stopping working for a meaningful share of visitors. */
+    function trackScheduleClick() {
+      try {
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({
+          event: 'chatbot_schedule_click',
+          lead_source: 'chatbot',
+          page: location.pathname,
+          page_name: document.title
+        });
+      } catch (e) { /* tracking must never block navigation */ }
     }
 
     function handleCTA(choice) {
@@ -2491,14 +2537,19 @@
             page: lead.page || '', page_name: lead.page_name || '',
             gclid: lead.gclid || t.gclid || '',
             gbraid: fp.gbraid || t.gbraid || '',
+            wbraid: t.wbraid || '',
             utm_campaign: lead.utm_campaign || t.utm_campaign || '',
             utm_medium: lead.utm_medium || t.utm_medium || '',
             utm_source: lead.utm_source || t.utm_source || '',
             utm_content: lead.utm_content || t.utm_content || '',
             utm_term: lead.utm_term || t.utm_term || '',
+            fbclid: t.fbclid || '',
             fbc: t.fbc || cbCookie('_fbc') || '',
             fbp: t.fbp || cbCookie('_fbp') || '',
-            ga: t.ga || cbCookie('_ga') || ''
+            ga: t.ga || cbCookie('_ga') || '',
+            landing_page: t.landing_page || '',
+            referrer: t.referrer || '',
+            page_url: t.page_url || lead.page || ''
           }
         });
         logDebug('trackLeadConversion: dataLayer event pushed');
@@ -2529,9 +2580,14 @@
         utm_medium: lead.utm_medium, utm_term: lead.utm_term,
         utm_content: lead.utm_content, gclid: lead.gclid,
         gbraid: fp.gbraid || trk.gbraid || '',
+        wbraid: trk.wbraid || '',
+        fbclid: trk.fbclid || '',
         fbc: trk.fbc || leadCookie('_fbc') || '',
         fbp: trk.fbp || leadCookie('_fbp') || '',
-        ga: trk.ga || leadCookie('_ga') || ''
+        ga: trk.ga || leadCookie('_ga') || '',
+        landing_page: trk.landing_page || '',
+        referrer: trk.referrer || '',
+        page_url: trk.page_url || lead.page || ''
       };
       logDebug('submitLead: POSTing payload to', LEAD_URL, p);
       fetch(LEAD_URL, {

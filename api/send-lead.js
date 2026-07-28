@@ -14,7 +14,8 @@ const LEAD_FIELDS = [
   'name', 'phone', 'email', 'company', 'cta_choice',
   'page', 'page_name',
   'utm_source', 'utm_campaign', 'utm_medium', 'utm_term', 'utm_content', 'gclid',
-  'gbraid', 'fbc', 'fbp', 'ga',
+  'gbraid', 'wbraid', 'fbclid', 'fbc', 'fbp', 'ga',
+  'landing_page', 'referrer', 'page_url',
 ];
 
 // Zapier Catch Hook (Cosmoforge). Fired server-side after a successful lead
