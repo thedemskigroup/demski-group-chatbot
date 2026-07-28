@@ -28,6 +28,16 @@ const LEAD_FIELDS = [
 // the emails, or the visitor's experience.
 function sendToZapier(lead) {
   const url = process.env.ZAPIER_WEBHOOK_URL;
+  // TEMP DIAGNOSTIC LOGGING — remove once the Catch Hook migration is
+  // confirmed working in CloudWatch. Deliberately does NOT log the full URL
+  // (first 60 chars would reveal the entire secret for a URL this short,
+  // and CloudWatch retention/access is broader than the Amplify console) —
+  // logs the domain/path prefix (confirms it's really a hooks.zapier.com
+  // Catch Hook URL, catches typos/wrong-domain bugs) plus total length
+  // (enough to visually confirm "this is the NEW hook, not the old one"
+  // across a redeploy, since the two URLs almost certainly differ in
+  // length, without exposing the account/hook ID segments).
+  log('Zapier webhook URL check: present=', !!url, url ? ('length=' + url.length + ' prefix=' + url.slice(0, 40)) : '(no value)');
   if (!url) {
     logError('ZAPIER_WEBHOOK_URL not set — skipping webhook');
     return;
@@ -39,13 +49,21 @@ function sendToZapier(lead) {
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(8000),
   }).then((res) => {
-    if (res.ok) {
-      log('Zapier webhook: delivered (HTTP', res.status + ')');
-    } else {
-      logError('Zapier webhook: rejected with HTTP', res.status);
-    }
+    // TEMP DIAGNOSTIC LOGGING — read the response body (Zapier's own small
+    // JSON status blob, not a secret) alongside HTTP status so a rejection
+    // is fully diagnosable from CloudWatch alone. Reading the body here
+    // does not change the fire-and-forget behavior: this whole chain was
+    // never awaited by the caller, and any failure reading the body still
+    // propagates to the same outer .catch() below as before.
+    return res.text().then((bodyText) => {
+      if (res.ok) {
+        log('Zapier webhook: delivered (HTTP', res.status + ') body=', bodyText);
+      } else {
+        logError('Zapier webhook: rejected (HTTP', res.status + ') body=', bodyText);
+      }
+    });
   }).catch((e) => {
-    logError('Zapier webhook: failed (non-blocking) —', e.message);
+    logError('Zapier webhook: threw exception (non-blocking) —', e.message);
   });
 }
 
