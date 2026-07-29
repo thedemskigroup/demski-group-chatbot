@@ -24,8 +24,12 @@ const LEAD_FIELDS = [
 // never appears in the public repo or in browser code. The URL comes from the
 // ZAPIER_WEBHOOK_URL env var (baked into the compute bundle at build time by
 // scripts/prepare-amplify.mjs, same mechanism as the other keys).
-// Fire-and-forget: any failure is logged and never affects the API response,
-// the emails, or the visitor's experience.
+// Must be AWAITED by the caller: Amplify compute freezes the Lambda the
+// moment the response is sent, so an un-awaited fetch never completes
+// (confirmed in CloudWatch — the URL-check line logs, then the invocation
+// ends with no delivered/rejected line). Failure is still non-blocking:
+// every path resolves via the .catch() below, so awaiting this can delay
+// the response by at most the fetch timeout but never fail it.
 function sendToZapier(lead) {
   const url = process.env.ZAPIER_WEBHOOK_URL;
   // TEMP DIAGNOSTIC LOGGING — remove once the Catch Hook migration is
@@ -43,11 +47,11 @@ function sendToZapier(lead) {
     return;
   }
   const payload = { ...lead, submitted_at: new Date().toISOString() };
-  fetch(url, {
+  return fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(3000),
   }).then((res) => {
     // TEMP DIAGNOSTIC LOGGING — read the response body (Zapier's own small
     // JSON status blob, not a secret) alongside HTTP status so a rejection
@@ -255,9 +259,9 @@ export default async function handler(req, res) {
   }
 
   // Successful submission (at least one email delivered) — forward the full
-  // lead to Zapier. Fire-and-forget: sendToZapier never throws and is not
-  // awaited, so it cannot delay or fail the API response below.
-  sendToZapier(lead);
+  // lead to Zapier. Awaited so the Lambda isn't frozen mid-request (see
+  // sendToZapier); never throws, so it cannot fail the API response below.
+  await sendToZapier(lead);
 
   if (!notificationOk || !confirmationOk) {
     log('Final API response: 207, partial success');
