@@ -2404,6 +2404,17 @@
      * identical sentences back to back. */
     function showFinalCTA(skipIntro) {
       step = 7; clearTimeout(idleTimer);
+      /* Fire the conversion event as soon as the lead is captured rather
+       * than waiting for a CTA click + send-lead round-trip (Andrew's
+       * feedback: no dataLayer event appeared after giving phone/email).
+       * Every fully-captured path converges here — typed steps 5/6 and the
+       * volunteered-info shortcuts — so this is the single reliable hook.
+       * Guarded on some contact info existing because the step-6 email
+       * refusal path also lands here with nothing on file. leadTracked
+       * inside trackLeadConversion keeps the later post-submit call (still
+       * present as a safety net for any path that skips this function)
+       * from double-firing. */
+      if (lead.email || lead.phone) trackLeadConversion();
       hideInputBar();
       function renderCtaButtons() {
         var div = document.createElement('div'); div.className = 'cb-cta-btns'; div.id = 'cb-cta';
@@ -2462,6 +2473,25 @@
       } catch (e) { /* tracking must never block navigation */ }
     }
 
+    /* Capture-time visibility (Andrew's feedback): a dataLayer ping the
+     * moment a phone/email lands in the lead object. Previously GTM saw
+     * nothing until the visitor clicked a CTA button, so a visitor who
+     * shared contact details and left produced zero events. Field value
+     * itself is NOT included — the full contact set rides on the
+     * formSubmission event; this one just marks that/when capture happened. */
+    function trackContactCaptured(field) {
+      try {
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({
+          event: 'chatbot_contact_captured',
+          field: field,
+          lead_source: 'chatbot',
+          page: location.pathname,
+          page_name: document.title
+        });
+      } catch (e) { /* tracking must never interrupt the conversation */ }
+    }
+
     function handleCTA(choice) {
       // Synchronous guard, checked before any other work — removing #cb-cta
       // from the DOM does NOT stop multiple synchronous clicks on the same
@@ -2504,8 +2534,10 @@
       }
     })();
 
-    /* Conversion tracking (Cosmoforge): pushed once per captured lead, only
-     * after /api/send-lead confirms success. Same {event, inputs, formName}
+    /* Conversion tracking (Cosmoforge): pushed once per captured lead —
+     * primarily at showFinalCTA (capture time), with a post-send-lead
+     * safety-net call for any path that reaches submission without passing
+     * through showFinalCTA. Same {event, inputs, formName}
      * shape as the site's forms (mirroring the old Elementor-form event) so
      * the GTM-W476LNT container's existing triggers fire unchanged, with
      * formName 'chatbot' to distinguish the source. Reads fbc/fbp/ga from
@@ -2915,6 +2947,7 @@
         var digits = val.replace(/\D/g, '');
         if (digits.length < 7) { botReply("That doesn't look like a valid phone number. Could you double-check?"); return; }
         lead.phone = val;
+        trackContactCaptured('phone');
         chatHistory.push({ role: 'user', content: val });
         if (lead.email) {
           step = 7;
@@ -2932,6 +2965,7 @@
       if (step === 6) {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) { botReply("That doesn't look right. Could you double-check your email address?"); return; }
         lead.email = val;
+        trackContactCaptured('email');
         chatHistory.push({ role: 'user', content: val });
         showFinalCTA(); return;
       }
