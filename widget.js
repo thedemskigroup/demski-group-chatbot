@@ -395,7 +395,6 @@
     + '.cb-hdr-dot{position:absolute;bottom:1px;right:1px;width:10px;height:10px;background:#22c55e;border-radius:50%;border:2px solid #0154B1;}'
     + '.cb-ch-name{font-weight:700;color:#fff;font-size:14px;letter-spacing:.1px;}'
     + '.cb-ch-status{font-size:11px;color:rgba(255,255,255,.75);margin-top:2px;font-weight:400;display:flex;align-items:center;gap:4px;}'
-    + '.cb-ch-status::before{content:"";display:inline-block;width:6px;height:6px;background:#22c55e;border-radius:50%;}'
     + '.cb-close-btn{cursor:pointer;font-size:23px;color:#fff;line-height:1;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:background .15s,color .15s;user-select:none;border:none;background:transparent;padding:0;flex-shrink:0;}'
     + '.cb-close-btn:hover{background:rgba(255,255,255,.15);color:#fff;}'
     + '.cb-restart-btn{cursor:pointer;line-height:1;width:30px;height:30px;display:flex!important;align-items:center;justify-content:center;border-radius:50%;transition:background .15s;user-select:none;border:none;background:transparent;padding:0;flex-shrink:0;margin-right:2px;}'
