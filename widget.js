@@ -612,17 +612,36 @@
     var inputBar = document.getElementById('cb-input-bar');
     var schedBar = document.getElementById('cb-schedule-wrap');
 
-    /* The persistent "Schedule a Free Consultation" bar is a plain anchor
-     * (native target="_blank" navigation) rather than a JS-driven open, so
-     * clicking it was previously invisible to tracking too. No
-     * preventDefault here — the push runs synchronously in the click
-     * handler, which always completes before the browser's default anchor
-     * navigation begins, so the event is guaranteed to be queued before
-     * the calendar opens without touching the native click behavior at
-     * all (same trackScheduleClick used by the "Book a Google Meet"
-     * button below — one implementation for both entry points). */
+    /* Gated schedule bar (Andrew's feedback): this used to navigate
+     * straight to Google Calendar no matter what, so a visitor could book
+     * a meeting without ever becoming a lead — no email, no Zapier/CRM
+     * record, no ad attribution (Google's booking page can't carry gclid/
+     * UTM and our tags don't run there). Now:
+     *  - name+email already captured → let the native new-tab navigation
+     *    proceed, and submit the lead right here so a booking can never
+     *    outrun the CRM record (submitLead is idempotent via its own
+     *    leadSubmitted guard, so a later CTA click won't double-send);
+     *  - otherwise → cancel the navigation and route into the existing
+     *    contact-capture flow. The calendar then opens from the final
+     *    "Book a Google Meet" button's own click — a real user gesture,
+     *    so Safari/iOS popup blocking (see trackScheduleClick's comment)
+     *    never comes into play on that later open. */
     var schedLink = document.getElementById('cb-schedule-bar');
-    if (schedLink) schedLink.addEventListener('click', function () { trackScheduleClick(); });
+    if (schedLink) schedLink.addEventListener('click', function (e) {
+      trackScheduleClick();
+      if (lead.name && lead.email) { submitLead(); return; }
+      e.preventDefault();
+      cancelTeaserFlow();
+      cancelPendingMcqReveal();
+      /* Drop any question buttons from the step we're jumping away from so
+       * a stale option can't be clicked into the wrong step later. */
+      var stale = msgs.querySelectorAll('.cb-qbtns, .cb-bbtns');
+      for (var i = 0; i < stale.length; i++) stale[i].remove();
+      addUserMsg('Schedule a Free Consultation');
+      if (scheduleGatePending) { inputEl.focus(); return; }
+      scheduleGatePending = true;
+      goToContactStep("Happy to get you booked in! Let me grab a couple quick details first so we can confirm your meeting.");
+    });
 
     /* AI conversation history — used whenever the user types free text
      * instead of clicking a scripted button. */
@@ -2397,6 +2416,12 @@
       goToContactStep('');
     }
 
+    /* True from the moment the schedule bar's click was intercepted for
+     * contact capture until the session ends — showFinalCTA uses it to
+     * phrase the hand-off as "pick a time" (the visitor already declared
+     * booking intent) instead of pitching the call as a next step. */
+    var scheduleGatePending = false;
+
     /* ── FINAL CTA ──
      * skipIntro is true when the caller (goToContactStep, for an
      * already-fully-known lead) already delivered an equivalent
@@ -2433,9 +2458,11 @@
         msgs.appendChild(div); scrollToLatestBotMsg();
       }
       if (skipIntro) { renderCtaButtons(); return; }
-      var ctaIntro = contactFlowTone === 'soft'
-        ? buildSoftClosingSummary()
-        : "Awesome! Based on what you've shared, the best next step is a quick call or Google Meet to go over your project!";
+      var ctaIntro = scheduleGatePending
+        ? "Perfect, you're all set! Click below to pick a time that works for you."
+        : contactFlowTone === 'soft'
+          ? buildSoftClosingSummary()
+          : "Awesome! Based on what you've shared, the best next step is a quick call or Google Meet to go over your project!";
       botReply(ctaIntro, renderCtaButtons, 1200);
     }
 
@@ -2588,7 +2615,15 @@
       } catch (e) { logDebug('trackLeadConversion failed (non-blocking):', e); }
     }
 
+    var leadSubmitted = false;
     function submitLead() {
+      /* One submission per session: the gated schedule bar and handleCTA
+       * can both legitimately reach this for the same lead (bar click
+       * with details on file, then a CTA button click) — without this
+       * guard that meant duplicate notification/confirmation emails and a
+       * duplicate Zapier event for one visitor. */
+      if (leadSubmitted) return;
+      leadSubmitted = true;
       /* gbraid/fbc/fbp/ga ride along in the lead payload so the server can
        * forward the full attribution set to the Zapier webhook. Same sources
        * as trackLeadConversion above: the site's __dgTracking helper when
