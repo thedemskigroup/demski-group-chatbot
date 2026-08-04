@@ -272,7 +272,12 @@
    * they're only ever held in memory. Saved/restored as one JSON blob so a
    * visitor who refreshes (or closes and reopens the tab) picks up exactly
    * where they left off instead of starting over. */
-  var SESSION_KEY = 'cb_session_v1';
+  /* v2: bumped when the transcript/flow shape changes enough that
+   * replaying a session saved by an older widget build produces broken
+   * threads (duplicated questions, orphaned bubbles). Old-key sessions
+   * are simply ignored — a returning visitor loses at most a 4h-old
+   * half-finished chat, once, instead of resuming a corrupted one. */
+  var SESSION_KEY = 'cb_session_v2';
 
   /* ── UTM CAPTURE ── */
   var urlP = {}, saved = {};
@@ -818,11 +823,12 @@
       return '<img src="' + AVATAR_URL + '" style="' + AV_STYLE + '" alt="" onerror="this.src=\'' + AVATAR_FB + '\'" />';
     }
 
-/* Removes the previous bot bubble if it has the exact same text, so a
-     * message firing twice (e.g. a race between the AI response and a
-     * reminder/auto-open) replaces the old one instead of stacking a
-     * duplicate. Reads the DOM directly so it also catches bubbles built
-     * by other code paths (like the idle reminder), not just addBotMsg. */
+    /* Duplicate suppression lives directly in addBotMsg below: a new bot
+     * message is skipped when the last visible bot bubble already says the
+     * same thing — verbatim, or as the tail of a longer line ("Hello!
+     * <question>" from one code path followed by the bare "<question>"
+     * from another). Skipped messages also stay out of the saved
+     * transcript, so a refresh can't replay the duplicate either. */
     /* Bot message text (AI replies, knowledge-base content, hardcoded
      * strings) is NEVER passed through innerHTML or any other HTML-parsing
      * API. buildBotMsgBubble below builds the message bubble entirely with
@@ -845,17 +851,20 @@
       return bubble;
     }
 
-    function dedupeLastBotMsg(text) {
-      var wraps = msgs.querySelectorAll('.cb-bot-msg-wrap');
-      var last = wraps[wraps.length - 1];
-      var lastBubble = last && last.querySelector('.cb-bot-msg');
-      if (lastBubble && lastBubble.textContent === String(text == null ? '' : text)) last.remove();
-    }
-
     var isReplayingSession = false;
 
     function addBotMsg(text) {
-      dedupeLastBotMsg(text);
+      /* See the duplicate-suppression note above buildBotMsgBubble. The
+       * comparison uses textContent (newlines collapse), which is exactly
+       * the fidelity the visitor sees. A genuine repeat (e.g. the same
+       * validation nudge after two bad answers) always has the visitor's
+       * own message rendered in between, so it's never the LAST bubble
+       * and is unaffected. */
+      var t = String(text == null ? '' : text);
+      var wraps = msgs.querySelectorAll('.cb-bot-msg-wrap');
+      var last = wraps[wraps.length - 1];
+      var lastBubble = last && last.querySelector('.cb-bot-msg');
+      if (lastBubble && t && (lastBubble.textContent === t || lastBubble.textContent.slice(-t.length) === t)) return;
       var w = document.createElement('div');
       w.className = 'cb-bot-msg-wrap';
       w.setAttribute('style', WRAP_STYLE);
@@ -1792,7 +1801,13 @@
       }
 
       removeIdleReminder();
-      dedupeLastBotMsg(idleMsg);
+      /* Same skip-if-already-said rule as addBotMsg (this bubble is built
+       * by hand for its removable IDLE_MSG_ID wrapper, so it can't reuse
+       * addBotMsg's own check). */
+      var idleWraps = msgs.querySelectorAll('.cb-bot-msg-wrap');
+      var idleLastWrap = idleWraps[idleWraps.length - 1];
+      var idleLastBubble = idleLastWrap && idleLastWrap.querySelector('.cb-bot-msg');
+      if (idleLastBubble && idleLastBubble.textContent === idleMsg) return;
       var wrap = document.createElement('div');
       wrap.id = IDLE_MSG_ID;
       wrap.className = 'cb-bot-msg-wrap';
@@ -2032,7 +2047,12 @@
         msgs.classList.remove('cb-body-hidden');
         showScheduleBar();
         resetIdleTimer();
+        /* The DOM wipe below previously left `transcript` untouched, so a
+         * saved session could keep bubbles the visitor no longer saw and
+         * replay them (on top of this nudge) after a refresh. Keep the
+         * saved transcript in lockstep with what's actually on screen. */
         msgs.innerHTML = '';
+        transcript = [];
         addBotMsg("If you'd like help with anything, I'm here.");
         showInputBar();
       }, 200);
