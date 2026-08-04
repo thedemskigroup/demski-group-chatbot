@@ -640,7 +640,7 @@
       addUserMsg('Schedule a Free Consultation');
       if (scheduleGatePending) { inputEl.focus(); return; }
       scheduleGatePending = true;
-      goToContactStep("Happy to get you booked in! Let me grab a couple quick details first so we can confirm your meeting.");
+      goToContactStep("Happy to get you booked! Let me grab a couple quick details first so we can confirm your meeting.");
     });
 
     /* AI conversation history — used whenever the user types free text
