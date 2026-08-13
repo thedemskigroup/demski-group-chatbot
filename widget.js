@@ -393,6 +393,8 @@
     + '.cb-avatar-wrap{position:relative;flex-shrink:0;}'
     + '.cb-avatar-wrap img{width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.5);display:block;}'
     + '.cb-hdr-dot{position:absolute;bottom:1px;right:1px;width:10px;height:10px;background:#22c55e;border-radius:50%;border:2px solid #0154B1;}'
+    + '.cb-hdr-badge{position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;border-radius:50%;display:none;align-items:center;justify-content:center;border:2px solid #0154B1;line-height:1;}'
+    + '.cb-hdr-badge.cb-hdr-badge-on{display:flex;}'
     + '.cb-ch-name{font-weight:700;color:#fff;font-size:14px;letter-spacing:.1px;}'
     + '.cb-ch-status{font-size:11px;color:rgba(255,255,255,.75);margin-top:2px;font-weight:400;display:flex;align-items:center;gap:4px;}'
     + '.cb-close-btn{cursor:pointer;font-size:23px;color:#fff;line-height:1;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:background .15s,color .15s;user-select:none;border:none;background:transparent;padding:0;flex-shrink:0;}'
@@ -541,6 +543,7 @@
             '<div class="cb-avatar-wrap">' +
               '<img src="' + AVATAR_URL + '" alt="' + BOT_NAME + '" onerror="this.src=\'' + AVATAR_FB + '\'" />' +
               '<span class="cb-hdr-dot"></span>' +
+              '<span class="cb-hdr-badge">1</span>' +
             '</div>' +
             '<div><div class="cb-ch-name">' + BOT_NAME + '</div><div class="cb-ch-status">' + BOT_TITLE + '</div></div>' +
           '</div>' +
@@ -557,6 +560,7 @@
               '<div class="cb-avatar-wrap">' +
                 '<img src="' + AVATAR_URL + '" alt="' + BOT_NAME + '" onerror="this.src=\'' + AVATAR_FB + '\'" />' +
                 '<span class="cb-hdr-dot"></span>' +
+              '<span class="cb-hdr-badge">1</span>' +
               '</div>' +
               '<div><div class="cb-ch-name">' + BOT_NAME + '</div><div class="cb-ch-status">' + BOT_TITLE + '</div></div>' +
             '</div>' +
@@ -1733,6 +1737,8 @@
       idleInterval = 40000;
       removeIdleReminder();
       awaitingIdleResponse = false;
+      var hdrBadges = document.querySelectorAll('.cb-hdr-badge');
+      for (var hb = 0; hb < hdrBadges.length; hb++) hdrBadges[hb].classList.remove('cb-hdr-badge-on');
       scheduleIdleTimer();
     }
 
@@ -1785,7 +1791,23 @@
        * chat window is closed — skip them while the user has it open. */
       var leadBotEl = document.getElementById('lead-bot');
       var chatIsOpen = leadBotEl && leadBotEl.style.display === 'block';
-      var idleMsg = "If you'd like help with anything else, I'm here.";
+      /* Once a conversation has actually started, going quiet gets an
+       * explicit "still there?" check-in; a visitor who merely opened the
+       * panel and never engaged keeps the softer, quieter line. */
+      var idleMsg = conversationStarted
+        ? "Are you still there? Happy to pick up right where we left off."
+        : "If you'd like help with anything else, I'm here.";
+      if (chatIsOpen && conversationStarted) {
+        /* Open-window ping (Andrew's feedback): the visitor started a
+         * conversation and stalled — likely tabbed away — so an appended
+         * text line alone is invisible. Mirror the closed-window signals
+         * scaled to an open panel: notification sound + a badge on the
+         * header avatar (cleared by resetIdleTimer on their next
+         * interaction). */
+        playNotification();
+        var hdrBadges = document.querySelectorAll('.cb-hdr-badge');
+        for (var hb = 0; hb < hdrBadges.length; hb++) hdrBadges[hb].classList.add('cb-hdr-badge-on');
+      }
       if (!chatIsOpen) {
         document.getElementById('cb-launcher-badge').classList.add('cb-badge-on');
         var idleLauncher = document.getElementById('bot-launcher');
