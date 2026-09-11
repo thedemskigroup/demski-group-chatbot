@@ -21,16 +21,34 @@ const { execSync } = require("child_process");
 
 // ---- Indicators of Compromise -------------------------------------------------
 // Known command-and-control hosts from the Aug 2026 incident. Extend as needed.
-const C2_HOSTS = ["networkads.in", "amdcdn.ru"];
+const C2_HOSTS = ["networkads.in", "amdcdn.ru", "cdnamz.ru", "cdnamz.in", "explorecdn.ru",
+  "timewebnet.in", "mindelgate.ru", "5yotmxcc54l9xda.ru", "ejntin6hkjt7gj2.ru"];
 
 // Critical code patterns. Each: { re, why }. A single hit fails the scan.
 const CRITICAL_PATTERNS = [
   { re: /String\.fromCharCode\(\s*(?:127|0x7f)\s*\)/i, why: "fromCharCode(127) obfuscation (incident signature)" },
   { re: /fromCharCode\((?:[^)]*,)?\s*(?:127|0x7f)\s*(?:,[^)]*)?\)/i, why: "fromCharCode with DEL byte" },
+  { re: /global(?:\.[ioe]|\[['"][ioe]['"]\])\s*=\s*['"]7-[vw]?\d+/i, why: "7-v campaign marker (global.o='7-v####' injector tag)" },
+  { re: /global(?:\.e|\[['"]e['"]\])\s*=\s*['"]NPM['"]/i, why: "global.e='NPM' injector tag" },
+  { re: /_\$_\d{3,}\s*=/, why: "_$_#### deobfuscator variable (incident payload)" },
   { re: /base64\s+(?:-d|--decode)[^\n|]*\|\s*(?:sh|bash|zsh)\b/i, why: "base64-decode piped to shell (persistence)" },
   { re: /\b(?:curl|wget)\b[^\n|]*\|\s*(?:sh|bash|zsh)\b/i, why: "remote script piped to shell" },
   { re: /eval\s*\(\s*(?:atob|Buffer\.from|require\(['"]zlib['"]\))/i, why: "eval of decoded/base64 payload" },
   { re: /child_process[\s\S]{0,80}?(?:atob|Buffer\.from\([^)]*base64)/i, why: "child_process executing decoded payload" },
+  // --- Xcode/.pbxproj + Gradle build-phase variant (mutated obfuscation) ---
+  // Decoder-name built at runtime to evade literal "base64"/"xxd" detection, e.g.
+  //   printf bVase64 | tr -d V   ->  base64      printf xxQd | tr -d Q  ->  xxd
+  { re: /printf\s+\S+\s*\|\s*tr\s+-d\b/i, why: "runtime-built decoder name (printf|tr -d obfuscation)" },
+  // Encoded blob decoded then piped to a shell:  echo <base64> | q | sh
+  { re: /echo\s+[A-Za-z0-9+/]{40,}={0,2}\s*\|[^\n]{0,60}\|\s*(?:sh|bash|zsh)\b/i, why: "encoded blob decoded and piped to shell" },
+  // Hex-encoded blob echoed into a pipe (xxd variant)
+  { re: /echo\s+(?:[0-9a-fA-F]{2}){40,}\s*\|/i, why: "hex-encoded blob piped to decoder (xxd variant)" },
+  // Campaign beacon parameters (curl -d "p=<stage>")
+  { re: /-d\s*["']p=(?:xcode_phase|android_gradle|Daemon|Terminal|SRC)\b/i, why: "injector C2 beacon parameter (p=<stage>)" },
+  // Gradle Groovy shell-exec: ["sh","-c", ...].execute()
+  { re: /\[\s*["']sh["']\s*,\s*["']-c["'][\s\S]{0,400}?\]\s*\.execute\s*\(/i, why: "Gradle shell-exec of inline command (.execute())" },
+  // Backgrounded decode-and-run subshell wrapper used by this campaign
+  { re: /\(\(\s*[A-Za-z_]\w*\s*\(\)\s*\{[\s\S]{0,160}?\}\s*;\s*echo[\s\S]{0,600}?\|\s*[A-Za-z_]\w*\s*\|\s*sh\b/i, why: "decode-and-exec subshell (build-phase injector)" },
 ];
 
 // File extensions worth scanning as text (source + config + shell).
@@ -82,7 +100,11 @@ function scanFile(file) {
   if (NEVER_SCAN.test(rel)) return;
   const ext = path.extname(rel).toLowerCase();
   const isConfig = CONFIG_RE.test(rel);
-  if (!TEXT_EXT.has(ext) && !isConfig) return;
+  // Xcode project files carry the build-phase (Run Script) variant of the payload.
+  const isXcode = /(\.pbxproj|project\.pbxproj)$/i.test(rel);
+  // Gradle build files carry the same build-phase (preBuild task) variant.
+  const isGradle = ext === ".gradle" || /(^|\/)(build|settings)\.gradle(\.kts)?$/i.test(rel);
+  if (!TEXT_EXT.has(ext) && !isConfig && !isXcode && !isGradle) return;
 
   let buf;
   try { buf = fs.readFileSync(file); } catch { return; }
