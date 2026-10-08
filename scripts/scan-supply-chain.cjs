@@ -96,7 +96,7 @@ function scanFile(file) {
   // Never scan this scanner itself — it legitimately contains the IOC strings
   // it searches for (the pattern list + C2 host list), which would self-trigger.
   try { if (path.resolve(file) === __filename) return; } catch { /* ignore */ }
-  if (/(^|\/)scripts\/scan-supply-chain\.js$/.test(rel)) return;
+  if (/(^|\/)scripts\/scan-supply-chain\.(c?js)$/.test(rel)) return;
   if (NEVER_SCAN.test(rel)) return;
   const ext = path.extname(rel).toLowerCase();
   const isConfig = CONFIG_RE.test(rel);
