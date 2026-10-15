@@ -63,7 +63,7 @@
                 Hi {{user_name}}, we've got your message!
               </div>
               <div style="font-size:13px; color:#8a96b3; margin-top:6px;">
-                Sent via the website chatbot &middot; The Demski Group
+                Sent via the {{source_label}} &middot; The Demski Group
               </div>
             </td>
           </tr>
@@ -72,7 +72,7 @@
           <tr>
             <td style="padding:28px 40px 8px 40px;">
               <p class="cb-dark-text" style="font-size:14px; line-height:1.7; color:#1a2b4a; margin:0 0 16px;">
-                Thanks for chatting with us! A member of our team has received your details and will be in touch shortly to help with your project.
+                {{source_thanks}} A member of our team has received your details and will be in touch shortly to help with your project.
               </p>
               <p class="cb-dark-text" style="font-size:14px; line-height:1.7; color:#1a2b4a; margin:0;">
                 In the meantime, here's a quick summary of what you told us:
@@ -96,6 +96,7 @@
                   <td style="padding:10px 0; border-top:1px solid #f0f3f9; color:#8a96b3; font-weight:600; vertical-align:top;">Email</td>
                   <td class="cb-dark-text" style="padding:10px 0; border-top:1px solid #f0f3f9;">{{user_email}}</td>
                 </tr>
+                <!--if:cta_choice-->
                 <tr>
                   <td style="padding:10px 0; border-top:1px solid #f0f3f9; color:#8a96b3; font-weight:600; vertical-align:top;">Next Step</td>
                   <td style="padding:10px 0; border-top:1px solid #f0f3f9;">
@@ -104,6 +105,7 @@
                     </span>
                   </td>
                 </tr>
+                <!--/if-->
               </table>
             </td>
           </tr>
@@ -128,7 +130,7 @@
               <div style="height:1px; background-color:#f0f3f9; margin-bottom:24px;"></div>
               <div style="font-size:12px; color:#a7b1cb; line-height:1.7;">
                 You're receiving this email because you submitted a request through<br>
-                the chatbot on The Demski Group website.
+                {{source_where}}.
               </div>
               <div style="font-size:11px; color:#c7cee2; margin-top:16px; letter-spacing:0.5px;">
                 &copy; 2026 The Demski Group. All rights reserved.
