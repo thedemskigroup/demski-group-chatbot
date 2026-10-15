@@ -6,8 +6,68 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const NOTIFY_TO = ['andrew.demski@demskigroupdev.com', 'aaron.demski@demskigroupdev.com'];
-const FROM_EMAIL = 'aaron.demski@demskigroupdev.com';
+const FROM_EMAIL = 'contact@demskigroupdev.com';
 const CONFIRMATION_FROM_EMAIL = 'contact@demskigroupdev.com';
+
+// Where a lead came from, keyed by the cta_choice each sender posts: the
+// headless site's forms (ContactSection, /contact-us/, /calculator-form/)
+// and the chatbot widget's final CTA buttons. Anything else, including an
+// empty cta_choice, falls back to neutral "website" wording so the emails
+// never show a blank. Used only for email wording — never sent to Zapier.
+const SOURCE_CONTACT_FORM = {
+  subject: 'Contact Form',
+  title: 'Website Contact Form',
+  label: 'website contact form',
+  inquiry: 'contact form',
+  where: 'the contact form on The Demski Group website',
+  thanks: 'Thanks for reaching out!',
+};
+const SOURCE_CALCULATOR = {
+  subject: 'Software Cost Calculator',
+  title: 'Software Cost Calculator',
+  label: 'software cost calculator',
+  inquiry: 'software cost calculator',
+  where: 'the software cost calculator on The Demski Group website',
+  thanks: 'Thanks for reaching out!',
+};
+const SOURCE_CHATBOT = {
+  subject: 'Chatbot',
+  title: 'Website Chatbot',
+  label: 'website chatbot',
+  inquiry: 'chatbot',
+  where: 'the chatbot on The Demski Group website',
+  thanks: 'Thanks for chatting with us!',
+};
+const SOURCE_WEBSITE = {
+  subject: 'Website',
+  title: 'Website',
+  label: 'website',
+  inquiry: 'website',
+  where: 'The Demski Group website',
+  thanks: 'Thanks for reaching out!',
+};
+const SOURCES_BY_CTA = {
+  'Contact Us': SOURCE_CONTACT_FORM,
+  'Schedule a Free Consultation': SOURCE_CONTACT_FORM,
+  'Software Cost Calculator': SOURCE_CALCULATOR,
+  'Book a Google Meet': SOURCE_CHATBOT,
+  'Send me info by email': SOURCE_CHATBOT,
+};
+
+function leadSource(ctaChoice) {
+  return SOURCES_BY_CTA[String(ctaChoice || '').trim()] || SOURCE_WEBSITE;
+}
+
+// Template placeholders for the source wording ({{source_label}} etc.).
+function sourceTemplateData(source) {
+  return {
+    source_title: source.title,
+    source_label: source.label,
+    source_inquiry: source.inquiry,
+    source_where: source.where,
+    source_thanks: source.thanks,
+  };
+}
 
 const LEAD_FIELDS = [
   'intent', 'intent_detail', 'budget', 'project_notes',
@@ -88,6 +148,39 @@ function escapeHtml(str) {
 function fillTemplate(html, data) {
   return html.replace(/\{\{(\w+)\}\}/g, function (_match, key) {
     return data[key] !== undefined && data[key] !== null && data[key] !== '' ? escapeHtml(data[key]) : '';
+  });
+}
+
+// Drops template blocks for empty values so form leads (which have no
+// intent/budget/UTMs etc.) don't show blank rows:
+//   <!--if:field--> ... <!--/if-->              kept only if field is non-empty
+//   <!--if-any:a,b,c--> ... <!--/if-any-->      kept if any listed field is non-empty
+// Each marker sits on its own line and the whole line is removed with it, so
+// a lead with every value present renders byte-for-byte as before.
+function applyConditionals(html, data) {
+  const has = (key) => data[key] !== undefined && data[key] !== null && String(data[key]).trim() !== '';
+  return html
+    .replace(/[ \t]*<!--if-any:([\w,]+)-->\n([\s\S]*?)[ \t]*<!--\/if-any-->\n/g, function (_m, keys, body) {
+      return keys.split(',').some(has) ? body : '';
+    })
+    .replace(/[ \t]*<!--if:(\w+)-->\n([\s\S]*?)[ \t]*<!--\/if-->\n/g, function (_m, key, body) {
+      return has(key) ? body : '';
+    });
+}
+
+// Detail tables style their first row differently (no top divider, fixed
+// label width). When applyConditionals removed that row, give the row that
+// is now first the same styling so the section doesn't open with a divider.
+function restyleFirstDetailRows(html) {
+  return html.replace(/(<table role="presentation"[^>]*margin-top:6px;">\s*)(<tr>[\s\S]*?<\/tr>)/g, function (_m, open, row) {
+    let isLabel = true;
+    const fixed = row.replace(/<td([^>]*?) style="([^"]*)"/g, function (_t, attrs, style) {
+      style = style.replace('border-top:1px solid #f0f3f9; ', '');
+      if (isLabel && !/width:/.test(style)) style = style.replace('padding:10px 0; ', 'padding:10px 0; width:130px; ');
+      isLabel = false;
+      return '<td' + attrs + ' style="' + style + '"';
+    });
+    return open + fixed;
   });
 }
 
@@ -202,21 +295,27 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Email service temporarily unavailable' });
   }
 
+  const source = leadSource(lead.cta_choice);
+
   const notificationMsg = {
     to: NOTIFY_TO,
     from: FROM_EMAIL,
-    subject: 'New Chatbot Lead: ' + lead.name,
-    html: fillTemplate(notificationHtml, lead),
+    subject: 'New Website Lead: ' + lead.name + ' (' + source.subject + ')',
+    html: fillTemplate(
+      restyleFirstDetailRows(applyConditionals(notificationHtml, lead)),
+      { ...lead, ...sourceTemplateData(source) }
+    ),
   };
 
   const confirmationMsg = {
     to: lead.email,
     from: CONFIRMATION_FROM_EMAIL,
     subject: 'Thanks for reaching out to The Demski Group',
-    html: fillTemplate(confirmationHtml, {
+    html: fillTemplate(applyConditionals(confirmationHtml, lead), {
       user_name: lead.name,
       user_email: lead.email,
       cta_choice: lead.cta_choice,
+      ...sourceTemplateData(source),
     }),
   };
 
